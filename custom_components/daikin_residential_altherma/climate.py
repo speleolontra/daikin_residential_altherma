@@ -2,6 +2,7 @@
 import logging
 
 import voluptuous as vol
+from typing import Tuple
 
 from homeassistant.components.climate import PLATFORM_SCHEMA, ClimateEntity
 from homeassistant.components.climate.const import (
@@ -97,15 +98,9 @@ class DaikinClimate(ClimateEntity):
 
         # Check whether we can control the target temperature
         controlMode = device.getValue(ATTR_CONTROL_MODE)
-        tempSettable = False
-        if controlMode == "roomTemperature":
-            tempSettable = device.getData(ATTR_TARGET_ROOM_TEMPERATURE)["settable"]
-        if controlMode in ("leavingWaterTemperature", "externalRoomTemperature"):
-            if device.getData(ATTR_TARGET_LEAVINGWATER_OFFSET) is not None:
-                tempSettable = device.getData(ATTR_TARGET_LEAVINGWATER_OFFSET)["settable"]
-            if device.getData(ATTR_TARGET_LEAVINGWATER_TEMPERATURE) is not None:
-                tempSettable = device.getData(ATTR_TARGET_LEAVINGWATER_TEMPERATURE)["settable"]
-        if tempSettable:
+        (tempSettable, leavingWaterOffsetSettable, leavingWaterTempSettable) = self.getSettableForDevice(device)
+
+        if tempSettable or leavingWaterOffsetSettable or leavingWaterTempSettable:
             self._supported_features = SUPPORT_TARGET_TEMPERATURE
 
         _LOGGER.info("Support features %s for controlMode %s", self._supported_features, controlMode)
@@ -118,6 +113,24 @@ class DaikinClimate(ClimateEntity):
                 self._supported_preset_modes.append(mode)
                 self._supported_features |= SUPPORT_PRESET_MODE
             _LOGGER.info("Support_preset_mode {}: {}".format(mode,support_preset))
+
+    # In theory only one of the three should be settable
+    @staticmethod
+    def getSettableForDevice(device) -> Tuple[bool, bool, bool]:
+        # Check whether we can control the target temperature
+        controlMode = device.getValue(ATTR_CONTROL_MODE)
+        tempSettable = False
+        leavingWaterTempSettable = False
+        leavingWaterOffsetSettable = False
+        if controlMode == "roomTemperature":
+            tempSettable = device.getData(ATTR_TARGET_ROOM_TEMPERATURE)["settable"]
+        if controlMode in ("leavingWaterTemperature", "externalRoomTemperature"):
+            if device.getData(ATTR_TARGET_LEAVINGWATER_OFFSET) is not None:
+                leavingWaterOffsetSettable = device.getData(ATTR_TARGET_LEAVINGWATER_OFFSET)["settable"]
+            if device.getData(ATTR_TARGET_LEAVINGWATER_TEMPERATURE) is not None:
+                leavingWaterTempSettable = device.getData(ATTR_TARGET_LEAVINGWATER_TEMPERATURE)["settable"]
+        return (tempSettable, leavingWaterOffsetSettable, leavingWaterTempSettable)
+
 
     async def _set(self, settings):
         """Set device settings using API."""
@@ -146,13 +159,16 @@ class DaikinClimate(ClimateEntity):
                         return None
 
                     # Check which controlMode is used to control the device
+                    (tempSettable, leavingWaterOffsetSettable, leavingWaterTempSettable) = self.getSettableForDevice(self._device)
+
                     controlMode = self._device.getValue(ATTR_CONTROL_MODE)
-                    if controlMode == "roomTemperature":
+                    if controlMode == "roomTemperature" and tempSettable:
                           values[HA_ATTR_TO_DAIKIN[ATTR_ROOM_TEMPERATURE]] = str(int(value))
                     if controlMode in ("leavingWaterTemperature", "externalRoomTemperature"):
-                        if self._device.getData(ATTR_TARGET_LEAVINGWATER_OFFSET) is not None:
+                        if self._device.getData(ATTR_TARGET_LEAVINGWATER_OFFSET) is not None and leavingWaterOffsetSettable:
                             values[HA_ATTR_TO_DAIKIN[ATTR_LEAVINGWATER_OFFSET]] = str(int(value))
-                        if self._device.getData(ATTR_TARGET_LEAVINGWATER_TEMPERATURE) is not None:
+                        # We cannot (should not?) control both the offset and the temperature
+                        if self._device.getData(ATTR_TARGET_LEAVINGWATER_TEMPERATURE) is not None and not leavingWaterOffsetSettable and leavingWaterTempSettable:
                             values[HA_ATTR_TO_DAIKIN[ATTR_LEAVINGWATER_TEMPERATURE]] = str(int(value))
                 except ValueError:
                     _LOGGER.error("Invalid temperature %s", value)
@@ -195,10 +211,19 @@ class DaikinClimate(ClimateEntity):
         currentTemp = None
         # At the moment the device supports a separate
         # room temperature do return that
+        # Check which controlMode is used to control the device
+        (_, leavingWaterOffsetSettable, leavingWaterTempSettable) = self.getSettableForDevice(self._device)
         if controlMode == "roomTemperature":
             currentTemp = self._device.getValue(ATTR_ROOM_TEMPERATURE)
         if controlMode in ("leavingWaterTemperature", "externalRoomTemperature"):
-            currentTemp = self._device.getValue(ATTR_LEAVINGWATER_TEMPERATURE)
+            # We can only control the offset - in this case only the offset is returned, not the actual leaving water temperature
+            if self._device.getData(ATTR_LEAVINGWATER_OFFSET) is not None and leavingWaterOffsetSettable and not leavingWaterTempSettable:
+                currentTemp = self._device.getValue(ATTR_LEAVINGWATER_OFFSET)
+            # On BRP069A62 we only get the current target value of the offset (which should be the current offset value as well - it changes more or less instantly)
+            elif self._device.getData(ATTR_TARGET_LEAVINGWATER_OFFSET) is not None and leavingWaterOffsetSettable and not leavingWaterTempSettable:
+                currentTemp = float(self._device.getValue(ATTR_TARGET_LEAVINGWATER_OFFSET)["value"])
+            else:
+                currentTemp = self._device.getValue(ATTR_LEAVINGWATER_TEMPERATURE)
         _LOGGER.debug("Device '%s' current temperature '%s'", self._device.name, currentTemp)
         return currentTemp
 
@@ -213,12 +238,13 @@ class DaikinClimate(ClimateEntity):
         # Check which controlMode is used to control the device
         controlMode = self._device.getValue(ATTR_CONTROL_MODE)
         maxTemp = DEFAULT_MAX_TEMP
+        (_, leavingWaterOffsetSettable, leavingWaterTempSettable) = self.getSettableForDevice(self._device)
         if controlMode == "roomTemperature":
             maxTemp = float(self._device.getData(ATTR_TARGET_ROOM_TEMPERATURE)["maxValue"])
         if controlMode in ("leavingWaterTemperature", "externalRoomTemperature"):
-            if self._device.getData(ATTR_TARGET_LEAVINGWATER_OFFSET) is not None:
+            if self._device.getData(ATTR_TARGET_LEAVINGWATER_OFFSET) is not None and leavingWaterOffsetSettable:
                 maxTemp = float(self._device.getData(ATTR_TARGET_LEAVINGWATER_OFFSET)["maxValue"])
-            if self._device.getData(ATTR_TARGET_LEAVINGWATER_TEMPERATURE) is not None:
+            if self._device.getData(ATTR_TARGET_LEAVINGWATER_TEMPERATURE) is not None and (not leavingWaterOffsetSettable or leavingWaterTempSettable):
                 maxTemp = float(self._device.getData(ATTR_TARGET_LEAVINGWATER_TEMPERATURE)["maxValue"])
         _LOGGER.debug("Device '%s' max temperature '%s'", self._device.name, maxTemp)
         return maxTemp
@@ -234,12 +260,13 @@ class DaikinClimate(ClimateEntity):
         # Check which controlMode is used to control the device
         controlMode = self._device.getValue(ATTR_CONTROL_MODE)
         minTemp = DEFAULT_MIN_TEMP
+        (_, leavingWaterOffsetSettable, leavingWaterTempSettable) = self.getSettableForDevice(self._device)
         if controlMode == "roomTemperature":
             minTemp = float(self._device.getData(ATTR_TARGET_ROOM_TEMPERATURE)["minValue"])
         if controlMode in ("leavingWaterTemperature", "externalRoomTemperature"):
-            if self._device.getData(ATTR_TARGET_LEAVINGWATER_OFFSET) is not None:
+            if self._device.getData(ATTR_TARGET_LEAVINGWATER_OFFSET) is not None and leavingWaterOffsetSettable:
                 minTemp = float(self._device.getData(ATTR_TARGET_LEAVINGWATER_OFFSET)["minValue"])
-            if self._device.getData(ATTR_TARGET_LEAVINGWATER_TEMPERATURE) is not None:
+            if self._device.getData(ATTR_TARGET_LEAVINGWATER_TEMPERATURE) is not None and (not leavingWaterOffsetSettable or leavingWaterTempSettable):
                 minTemp = float(self._device.getData(ATTR_TARGET_LEAVINGWATER_TEMPERATURE)["minValue"])
         _LOGGER.debug("Device '%s' min temperature '%s'", self._device.name, minTemp)
         return minTemp
@@ -254,12 +281,13 @@ class DaikinClimate(ClimateEntity):
         # Check which controlMode is used to control the device
         controlMode = self._device.getValue(ATTR_CONTROL_MODE)
         targetTemp = None
+        (_, leavingWaterOffsetSettable, leavingWaterTempSettable) = self.getSettableForDevice(self._device)
         if controlMode == "roomTemperature":
             targetTemp = float(self._device.getValue(ATTR_TARGET_ROOM_TEMPERATURE))
         if controlMode in ("leavingWaterTemperature", "externalRoomTemperature"):
-            if self._device.getData(ATTR_TARGET_LEAVINGWATER_OFFSET) is not None:
+            if self._device.getData(ATTR_TARGET_LEAVINGWATER_OFFSET) is not None and leavingWaterOffsetSettable:
                 targetTemp = float(self._device.getValue(ATTR_TARGET_LEAVINGWATER_OFFSET))
-            if self._device.getData(ATTR_TARGET_LEAVINGWATER_TEMPERATURE) is not None:
+            if self._device.getData(ATTR_TARGET_LEAVINGWATER_TEMPERATURE) is not None and (not leavingWaterOffsetSettable or leavingWaterTempSettable):
                 targetTemp = float(self._device.getValue(ATTR_TARGET_LEAVINGWATER_TEMPERATURE))
         _LOGGER.debug("Device '%s' target temperature '%s'", self._device.name, targetTemp)
         return targetTemp
@@ -275,12 +303,13 @@ class DaikinClimate(ClimateEntity):
         # Check which controlMode is used to control the device
         controlMode = self._device.getValue(ATTR_CONTROL_MODE)
         tempStep = None
+        (_, leavingWaterOffsetSettable, leavingWaterTempSettable) = self.getSettableForDevice(self._device)
         if controlMode == "roomTemperature":
             tempStep = float(self._device.getData(ATTR_TARGET_ROOM_TEMPERATURE)["stepValue"])
         if controlMode in ("leavingWaterTemperature", "externalRoomTemperature"):
-            if self._device.getData(ATTR_TARGET_LEAVINGWATER_OFFSET) is not None:
+            if self._device.getData(ATTR_TARGET_LEAVINGWATER_OFFSET) is not None and leavingWaterOffsetSettable:
                 tempStep = float(self._device.getData(ATTR_TARGET_LEAVINGWATER_OFFSET)["stepValue"])
-            if self._device.getData(ATTR_TARGET_LEAVINGWATER_TEMPERATURE) is not None:
+            if self._device.getData(ATTR_TARGET_LEAVINGWATER_TEMPERATURE) is not None and (not leavingWaterOffsetSettable or leavingWaterTempSettable):
                 tempStep = float(self._device.getData(ATTR_TARGET_LEAVINGWATER_TEMPERATURE)["stepValue"])
         _LOGGER.debug("Device '%s' step temperature '%s'", self._device.name, tempStep)
         return tempStep
