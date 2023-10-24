@@ -221,7 +221,7 @@ class DaikinClimate(ClimateEntity):
                 currentTemp = self._device.getValue(ATTR_LEAVINGWATER_OFFSET)
             # On BRP069A62 we only get the current target value of the offset (which should be the current offset value as well - it changes more or less instantly)
             elif self._device.getData(ATTR_TARGET_LEAVINGWATER_OFFSET) is not None and leavingWaterOffsetSettable and not leavingWaterTempSettable:
-                currentTemp = float(self._device.getValue(ATTR_TARGET_LEAVINGWATER_OFFSET)["value"])
+                currentTemp = float(self._device.getValue(ATTR_TARGET_LEAVINGWATER_OFFSET))
             else:
                 currentTemp = self._device.getValue(ATTR_LEAVINGWATER_TEMPERATURE)
         _LOGGER.debug("Device '%s' current temperature '%s'", self._device.name, currentTemp)
