@@ -163,7 +163,7 @@ class DaikinClimate(ClimateEntity):
 
                     controlMode = self._device.getValue(ATTR_CONTROL_MODE)
                     if controlMode == "roomTemperature" and tempSettable:
-                          values[HA_ATTR_TO_DAIKIN[ATTR_ROOM_TEMPERATURE]] = str(int(value))
+                            values[HA_ATTR_TO_DAIKIN[ATTR_ROOM_TEMPERATURE]] = str(int(value))
                     if controlMode in ("leavingWaterTemperature", "externalRoomTemperature"):
                         if self._device.getData(ATTR_TARGET_LEAVINGWATER_OFFSET) is not None and leavingWaterOffsetSettable:
                             values[HA_ATTR_TO_DAIKIN[ATTR_LEAVINGWATER_OFFSET]] = str(int(value))
