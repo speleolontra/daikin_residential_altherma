@@ -11,8 +11,7 @@ from homeassistant.const import (
 
 from homeassistant.components.sensor import (
     SensorEntity,
-    STATE_CLASS_MEASUREMENT,
-    STATE_CLASS_TOTAL_INCREASING,
+    SensorStateClass,
 )
 
 from homeassistant.helpers.entity import EntityCategory
@@ -404,7 +403,7 @@ class DaikinInfoSensor(DaikinSensor):
 
     @property
     def state_class(self):
-        return STATE_CLASS_MEASUREMENT
+        return SensorStateClass.MEASUREMENT
 
 class DaikinClimateSensor(DaikinSensor):
     """Representation of a Climate Sensor."""
@@ -416,7 +415,7 @@ class DaikinClimateSensor(DaikinSensor):
 
     @property
     def state_class(self):
-        return STATE_CLASS_MEASUREMENT
+        return SensorStateClass.MEASUREMENT
 
 class DaikinEnergySensor(DaikinSensor):
     """Representation of a power/energy consumption sensor."""
@@ -437,7 +436,7 @@ class DaikinEnergySensor(DaikinSensor):
 
     @property
     def state_class(self):
-        return STATE_CLASS_TOTAL_INCREASING
+        return SensorStateClass.TOTAL_INCREASING
 
 class DaikinGatewaySensor(DaikinSensor):
     """Representation of a WiFi Sensor."""
@@ -453,7 +452,7 @@ class DaikinGatewaySensor(DaikinSensor):
     @property
     def state_class(self):
         if self._device_attribute == ATTR_WIFI_STRENGTH:
-            return STATE_CLASS_MEASUREMENT
+            return SensorStateClass.MEASUREMENT
         else:
             return None
 
