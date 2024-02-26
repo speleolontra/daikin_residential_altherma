@@ -1,10 +1,11 @@
-[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
+> [!IMPORTANT]
+> This integration will not work anymore after March 11th 2024 due to changes made by Daikin (see https://github.com/speleolontra/daikin_residential_altherma/issues/226). Please migrate to the [daikin_onecta](https://github.com/jwillemsen/daikin_onecta) integration which supports the Daikin Altherma but also other types of Daikin devices. 
 
 # Daikin Residential for Altherma 3 Heat Pump
 
 Home Assistant Integration for Daikin Altherma 3 Heat Pump (natively for models BRP069A78 but users have good experience also for BRP069A62 and BRP069A61 despite they have not been tested).
 
-This integration can coexist with the [daiking_residential integration](https://github.com/rospogrigio/daikin_residential).
+This integration can coexist with the [daiking_residential] integration (https://github.com/rospogrigio/daikin_residential).
 
 This integration is maintained by [@speleolontra](https://github.com/speleolontra) and [@jwillemsen](https://github.com/jwillemsen).
 
